@@ -1,6 +1,6 @@
 {
   "name": "starfleet-panel",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "An LCARS status panel under the Claude Code prompt, in the style of a 24th-century Starfleet console; follows red-alert's alert condition.",
   "author": { "name": "dukechain2333" },
   "homepage": "https://github.com/dukechain2333/starfleet-panel",
@@ -18,8 +18,8 @@
     },
     "labels": {
       "type": "string",
-      "title": "Readout labels",
-      "description": "starfleet: HELM, CORE, DILITHIUM, ANTIMATTER, SECTOR, COURSE; plain: MODEL, CTX, 5H, 7D, DIR, GIT.",
+      "title": "Terminology",
+      "description": "starfleet: HELM, CORE, DILITHIUM, stardate, CONDITION…; plain: MODEL, CONTEXT, 5H LIMIT, date, ALERTS…. /lcars plain and /lcars starfleet switch it too.",
       "default": "starfleet",
       "options": ["starfleet", "plain"]
     },

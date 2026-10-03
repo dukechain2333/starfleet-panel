@@ -115,10 +115,12 @@ describe('the panel under the prompt', () => {
     const labels = await ui.find({ key: 'lcars:row:1' })
     const values = await ui.find({ key: 'lcars:row:2' })
     // an elbow at each end, one header segment per column: seven columns at this width
-    expect(top?.text).toMatch(/^▗▄{10}( ▄+){7} ▄{11}▖$/)
+    expect(top?.text).toMatch(/^ {10}▛( ▀+){7} ▜ {11}$/)
     expect(labels?.text).toMatch(
-      /^ {2}STANDBY ▘ HELM +CORE +DILITHIUM T-2H14M +ANTIMATTER +COURSE main +ENV +CREW +▝ SHIP TIME $/,
+      /^ {2}STANDBY {3}HELM +CORE +DILITHIUM T-2H14M +ANTIMATTER +COURSE main +ENV +CREW +SHIP TIME $/,
     )
+    // the blocks' tops are solid cells, so they meet the rows below in any terminal
+    expect((await ui.find({ type: 'Text', text: /^ {10}$/ }))?.props.backgroundColor).toBe('#FF9900')
     expect(values?.text).toMatch(
       /^ {2}\d{5}\.\d {3}OPUS 5\.5 WARP 9 +▊{12} 42% +▊{12} 72% +88% T-3D4H +~\/enterprise +warpcore +picard@enterprise +\d\d:\d\d $/,
     )
@@ -134,7 +136,7 @@ describe('the panel under the prompt', () => {
     ship(on)
     await $.session.start(START)
     const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...hint(150, true) })
-    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toMatch(/^ +ENGAGED ▘/)
+    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toMatch(/^ +ENGAGED {3}HELM/)
     await ui.unmount()
   })
 
@@ -201,7 +203,7 @@ describe('with red-alert', () => {
     ship(on, { redAlert: { link: RED_ALERT_ONLINE, active: null } })
     await $.session.start(START)
     const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...hint(150) })
-    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toMatch(/▝ CONDITION $/)
+    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toMatch(/ CONDITION $/)
     expect((await ui.find({ key: 'lcars:row:2' }))?.text).toMatch(/ GREEN $/)
     await ui.unmount()
   })
@@ -219,13 +221,13 @@ describe('with red-alert', () => {
     await $.session.start(START)
 
     let ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...hint(150) })
-    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toMatch(/^ +STANDBY ▘.*▝ CONDITION $/)
+    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toMatch(/^ +STANDBY {3}HELM.* CONDITION $/)
     expect((await ui.find({ key: 'lcars:row:2' }))?.text).toMatch(/ RED ALERT $/)
     const lit = await ui.find({ type: 'Text', text: /RED ALERT $/ })
     expect(lit?.props.backgroundColor).toBe('#FF3333')
     expect(lit?.props.color).toBe('#000000')
-    const elbow = await ui.find({ type: 'Text', text: /^▗▄+$/ })
-    expect(elbow?.props.color).toBe('#FF3333')
+    const elbow = await ui.find({ type: 'Text', text: /^ {10}$/ })
+    expect(elbow?.props.backgroundColor).toBe('#FF3333')
     await ui.unmount()
 
     await clock.advance(500)
@@ -250,9 +252,43 @@ describe('with red-alert', () => {
     ship(on, { redAlert: { link: RED_ALERT_ONLINE, active: RED_ALERT_KLAXON } })
     await $.session.start(START)
     const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...hint(150) })
-    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toMatch(/^ +STANDBY ▘.*▝ SHIP TIME $/)
+    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toMatch(/^ +STANDBY {3}HELM.* SHIP TIME $/)
     expect(await ui.find({ type: 'Text', text: /RED ALERT/ })).toBeUndefined()
     await ui.unmount()
+  })
+})
+
+describe('plain terms', () => {
+  test('every Starfleet word gives way: labels, date, time, the condition', { options: { labels: 'plain' } }, async ($, on) => {
+    ship(on, { percent: 42, redAlert: { link: RED_ALERT_ONLINE, active: null } })
+    await $.session.start(START)
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...hint(150) })
+    const labels = (await ui.find({ key: 'lcars:row:1' }))?.text ?? ''
+    const values = (await ui.find({ key: 'lcars:row:2' }))?.text ?? ''
+    expect(labels).toMatch(/^ +IDLE {3}MODEL +CONTEXT +5H LIMIT reset 2h14m +7D LIMIT +GIT main .* ALERTS $/)
+    expect(values).toMatch(/^ +[A-Z]{3} \d\d {3}OPUS 5\.5 XHIGH +▊+ 42% used +▊+ 72% left +88% left .* ONLINE $/)
+    for (const word of ['HELM', 'CORE', 'DILITHIUM', 'ANTIMATTER', 'COURSE', 'CONDITION', 'STANDBY', 'WARP']) {
+      expect(`${labels} ${values}`).not.toContain(word)
+    }
+    await ui.unmount()
+    const { text } = await $.command.run({ command: 'lcars', args: '', ...TYPED })
+    expect(text).toMatch(/^STATUS REPORT · [A-Z]{3} \d\d · /)
+  })
+
+  test('/lcars plain and /lcars starfleet save the choice as the setting', async ($, on) => {
+    ship(on)
+    const sets: { key: string; value: unknown }[] = []
+    on('config.set', ($, e) => {
+      sets.push({ key: e.key, value: e.value })
+      return { value: e.value }
+    })
+    await $.session.start(START)
+    expect((await $.command.run({ command: 'lcars', args: 'plain', ...TYPED })).text).toContain('plain terms')
+    expect((await $.command.run({ command: 'lcars', args: 'starfleet', ...TYPED })).text).toContain('Starfleet terms')
+    expect(sets).toEqual([
+      { key: 'starfleet-panel.labels', value: 'plain' },
+      { key: 'starfleet-panel.labels', value: 'starfleet' },
+    ])
   })
 })
 
@@ -394,8 +430,8 @@ describe('layout', () => {
   })
 
   test('plain labels', () => {
-    const [, labels, values] = rowsAt(200, { labels: 'plain' })
-    expect(labels).toMatch(/^ +IDLE ▘ MODEL +CTX +5H T-2H +7D +GIT feature\/saucer-separation +ENV +COST +USER /)
-    expect(values).toContain('OPUS 5.5 XHIGH')
+    const [, labels, values] = rowsAt(220, { labels: 'plain' })
+    expect(labels).toMatch(/^ +IDLE {3}MODEL +CONTEXT +5H LIMIT reset 2h +7D LIMIT +GIT feature\/saucer-separation +ENV +COST +USER /)
+    expect(values).toMatch(/^ +[A-Z]{3} \d\d {3}OPUS 5\.5 XHIGH +▊+ 42% used +▊+ 72% left +88% left reset 3d4h /)
   })
 })

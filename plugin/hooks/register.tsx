@@ -20,11 +20,11 @@ import type { EngineInterface, PluginOptions, Register, Timer } from 'claude-cod
 import type { PanelLayout, Readings, RedAlertActive, RedAlertLink } from '../types'
 import { LCARS } from './lcars'
 import type { Piece } from './lcars'
-import { BRIDGE_MIN_WIDTH, bridgeRows, compactRow, reportText } from './panel'
+import { BRIDGE_MIN_WIDTH, bridgeRows, compactRow, conditionFor, reportText } from './panel'
 import type { Condition, LabelSet, PanelView } from './panel'
 
 const COMMAND = 'lcars'
-const USAGE = 'Usage: /lcars [report | bridge | compact | off | reset]'
+const USAGE = 'Usage: /lcars [report | bridge | compact | off | reset | starfleet | plain]'
 /** Cells the prompt footer keeps at its edges: two on each side. */
 const MARGIN = 4
 const SLOW_MS = 30_000
@@ -251,10 +251,10 @@ function conditionOf(link: RedAlertLink | null, active: RedAlertActive | null): 
     return { label: title, short: title.length <= 10 ? title : active.level.toUpperCase().slice(0, 10), color: active.color }
   }
   if (!link) return null
-  if (link.checkedAt === 0) return { label: 'LINKING', short: 'LINKING', color: LCARS.tan }
-  if (!link.online) return { label: 'ALERTS OFFLINE', short: 'OFFLINE', color: LCARS.red }
-  if (link.mute) return { label: 'GREEN · MUTED', short: 'MUTED', color: LCARS.peach }
-  return { label: 'CONDITION GREEN', short: 'GREEN', color: LCARS.green }
+  if (link.checkedAt === 0) return conditionFor('linking', settings.labels, LCARS.tan)
+  if (!link.online) return conditionFor('offline', settings.labels, LCARS.red)
+  if (link.mute) return conditionFor('muted', settings.labels, LCARS.peach)
+  return conditionFor('green', settings.labels, LCARS.green)
 }
 
 /** Blinks the state and condition blocks while red-alert animates a red or yellow alert, as every console on the ship does. */
@@ -330,7 +330,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: COMMAND,
       description: 'LCARS status report, or switch the status panel layout',
-      argumentHint: '[report | bridge | compact | off | reset]',
+      argumentHint: '[report | bridge | compact | off | reset | starfleet | plain]',
       immediate: true,
     })
     await Promise.race([refresh($, true), $.clock.sleep(1500)])
@@ -397,6 +397,19 @@ export const register: Register = (on, options) => {
       case 'off':
         await update($, layoutOverride, () => word)
         return { text: `LCARS panel: ${word}, for this session. The default is starfleet-panel's "Panel layout" in /config.` }
+      case 'starfleet':
+      case 'plain': {
+        // the terms are a setting: written as /config writes it, kept for new sessions
+        const set = await $.config.set({ key: `${$.plugin.name}.labels`, value: word })
+        return 'deny' in set && set.deny
+          ? { text: `Could not switch the terms: ${set.deny}. Set "Terminology" in /config instead.` }
+          : {
+              text:
+                word === 'plain'
+                  ? 'LCARS panel: plain terms (MODEL, CONTEXT, 5H LIMIT, date…). Saved; /lcars starfleet switches back.'
+                  : 'LCARS panel: Starfleet terms (HELM, CORE, DILITHIUM, stardate…). Saved; /lcars plain switches back.',
+            }
+      }
       case 'reset':
       case 'auto':
         await update($, layoutOverride, () => null)

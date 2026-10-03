@@ -28,19 +28,25 @@ When red-alert sounds the klaxon, the panel goes to RED ALERT with it.
 
 ## The readouts
 
-| Panel label | Plain label | What it shows |
+Every readout has a Starfleet name and a plain one, and you pick which the
+panel uses: `/lcars plain` or `/lcars starfleet` (saved, like the
+**Terminology** row in `/config`). The plain terms read as an ordinary status
+line: the date instead of the stardate, `CONTEXT 42% used`,
+`5H LIMIT 72% left`, `ALERTS ONLINE`.
+
+| Starfleet term | Plain term | What it shows |
 | --- | --- | --- |
-| sidebar, upper block | | `STANDBY` while idle, `ENGAGED` while Claude works (plain: `IDLE` / `WORKING`) |
-| sidebar, lower block | | the stardate, in TNG's broadcast reckoning: 41000 when the show began in 1987, a thousand units a year |
+| `STANDBY` / `ENGAGED` | `IDLE` / `WORKING` | the sidebar's upper block: whether Claude is working |
+| stardate | date (`OCT 02`) | the sidebar's lower block; the stardate is TNG's broadcast reckoning: 41000 when the show began in 1987, a thousand units a year |
 | `HELM` | `MODEL` | the model (`OPUS 5.5`) and reasoning effort as a warp factor: low `IMPULSE`, medium `WARP 5`, high `WARP 7`, xhigh `WARP 9`, max `WARP 9.6` |
-| `CORE` | `CTX` | context window used, with a segmented meter |
-| `DILITHIUM` | `5H` | the 5-hour limit: how much is **left**, a meter, and `T-2H14M` to the reset |
-| `ANTIMATTER` | `7D` | the 7-day limit: how much is left and `T-3D4H` to the reset |
+| `CORE` | `CONTEXT` | context window used (`42%`; plain `42% used`), with a segmented meter |
+| `DILITHIUM` | `5H LIMIT` | the 5-hour limit: how much is **left** (plain `72% left`), a meter, and the time to the reset (`T-2H14M`; plain `reset 2h14m`) |
+| `ANTIMATTER` | `7D LIMIT` | the 7-day limit: how much is left and the time to the reset |
 | `COURSE` / `SECTOR` | `GIT` / `DIR` | the git branch (or `@<sha>` when detached) over the working directory, `~` for home; `SECTOR` outside a repository |
 | `ENV` | `ENV` | the active conda env (not `base`) or virtualenv, on wide terminals |
 | `ENERGY` | `COST` | the session's cost, on wide terminals (off by default) |
 | `CREW` | `USER` | `user@host`, on wide terminals (can be turned off) |
-| end block | | red-alert's condition: `CONDITION` over `GREEN`, `MUTED`, `OFFLINE` or the alert; without red-alert, `SHIP TIME` over the clock |
+| `CONDITION` | `ALERTS` | the end block: red-alert's state, `GREEN` (plain `ONLINE`), `MUTED`, `OFFLINE` or the alert; without red-alert, `SHIP TIME` (plain `TIME`) over the clock |
 
 Readings turn yellow at 60% used and red at 80%. These are the thresholds of
 the classic `statusLine` script the panel replaces. The 5-hour and 7-day
@@ -134,6 +140,8 @@ every turn and every 30 seconds.
   CONDITION   (red-alert)          condition green
   ```
 
+- **`/lcars plain | starfleet`** switches the terms, and keeps the choice
+  for new sessions.
 - **`/lcars bridge | compact | off`** switches the layout for this session.
   `/lcars reset` goes back to the setting.
 
@@ -144,7 +152,7 @@ Set these in `/config` (or `claude plugin configure starfleet-panel`):
 | Setting | Default | |
 | --- | --- | --- |
 | `layout` | `bridge` | `bridge`, `compact` or `off` |
-| `labels` | `starfleet` | `starfleet` (HELM, CORE, DILITHIUM…) or `plain` (MODEL, CTX, 5H…) |
+| `labels` (Terminology) | `starfleet` | `starfleet` (HELM, CORE, DILITHIUM, stardate…) or `plain` (MODEL, CONTEXT, 5H LIMIT, date…); `/lcars plain` and `/lcars starfleet` set it too |
 | `showCost` | `false` | add the ENERGY column (the session's cost) on wide terminals |
 | `showUserHost` | `true` | add the CREW column (`user@host`) on wide terminals |
 | `followRedAlert` | `true` | show red-alert's condition and repaint with its alerts |

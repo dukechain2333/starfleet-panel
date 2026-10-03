@@ -14,6 +14,7 @@ import {
   gauge,
   homePath,
   modelName,
+  shortDate,
   spanText,
   stardate,
   tokenCount,
@@ -44,6 +45,10 @@ export type PanelView = {
   condition: Condition | null
 }
 
+/**
+ * The words the panel uses, Starfleet's or plain ones: every label, the date
+ * in the sidebar, the end block's words, and how a percentage and a reset read.
+ */
 export const LABELS = {
   starfleet: {
     helm: 'HELM',
@@ -57,12 +62,22 @@ export const LABELS = {
     crew: 'CREW',
     idle: 'STANDBY',
     working: 'ENGAGED',
+    condition: 'CONDITION',
+    clock: 'SHIP TIME',
+    loading: 'SENSORS',
+    loadingValue: 'INITIALIZING',
+    used: '',
+    left: '',
+    report: 'LCARS STATUS REPORT',
+    date: (ms: number) => stardate(ms),
+    reportDate: (ms: number) => `STARDATE ${stardate(ms)}`,
+    reset: (ms: number) => countdown(ms),
   },
   plain: {
     helm: 'MODEL',
-    core: 'CTX',
-    fiveHour: '5H',
-    sevenDay: '7D',
+    core: 'CONTEXT',
+    fiveHour: '5H LIMIT',
+    sevenDay: '7D LIMIT',
     cost: 'COST',
     sector: 'DIR',
     course: 'GIT',
@@ -70,8 +85,40 @@ export const LABELS = {
     crew: 'USER',
     idle: 'IDLE',
     working: 'WORKING',
+    condition: 'ALERTS',
+    clock: 'TIME',
+    loading: 'STATUS',
+    loadingValue: 'LOADING',
+    used: ' used',
+    left: ' left',
+    report: 'STATUS REPORT',
+    date: (ms: number) => shortDate(ms),
+    reportDate: (ms: number) => shortDate(ms),
+    reset: (ms: number) => `reset ${spanText(ms)}`,
   },
 } as const
+
+/** red-alert's states, in each set of words: the full label, and the end block's short one. */
+const CONDITIONS = {
+  starfleet: {
+    linking: ['LINKING', 'LINKING'],
+    offline: ['ALERTS OFFLINE', 'OFFLINE'],
+    muted: ['GREEN · MUTED', 'MUTED'],
+    green: ['CONDITION GREEN', 'GREEN'],
+  },
+  plain: {
+    linking: ['ALERTS LINKING', 'LINKING'],
+    offline: ['ALERTS OFFLINE', 'OFFLINE'],
+    muted: ['ALERTS MUTED', 'MUTED'],
+    green: ['ALERTS ONLINE', 'ONLINE'],
+  },
+} as const
+
+/** red-alert's state when no alert is up, as the panel words it. */
+export function conditionFor(state: keyof (typeof CONDITIONS)['plain'], labels: LabelSet, color: string): Condition {
+  const [label, short] = CONDITIONS[labels][state]
+  return { label, short, color }
+}
 
 type Labels = (typeof LABELS)[LabelSet]
 
@@ -151,8 +198,8 @@ function columnsOf(view: PanelView, labels: Labels, frame: Frame): Column[] {
         color: LCARS.orange,
         min: 12,
         pref: 12,
-        label: () => [{ text: 'SENSORS', color: tint(LCARS.orange) }],
-        value: () => [{ text: 'INITIALIZING', color: frame.label }],
+        label: () => [{ text: labels.loading, color: tint(LCARS.orange) }],
+        value: () => [{ text: labels.loadingValue, color: frame.label }],
       }),
     ]
   }
@@ -178,7 +225,7 @@ function columnsOf(view: PanelView, labels: Labels, frame: Frame): Column[] {
   )
 
   const ctx = r.context.percent
-  const ctxText = ctx === null ? '--' : `${Math.round(ctx)}%`
+  const ctxText = ctx === null ? '--' : `${Math.round(ctx)}%${labels.used}`
   const ctxColor = ctx === null ? frame.label : levelColor(ctx)
   columns.push(
     column({
@@ -198,9 +245,9 @@ function columnsOf(view: PanelView, labels: Labels, frame: Frame): Column[] {
   for (const w of windows) {
     if (!w.limit) continue
     const left = Math.max(0, Math.round(100 - w.limit.used))
-    const text = `${left}%`
+    const text = `${left}%${labels.left}`
     const color = levelColor(w.limit.used)
-    const reset = w.limit.resetsAt === null ? '' : countdown(w.limit.resetsAt - view.now)
+    const reset = w.limit.resetsAt === null ? '' : labels.reset(w.limit.resetsAt - view.now)
     const hasMeter = w.meter > 0
     columns.push(
       column({
@@ -309,9 +356,9 @@ function cell(pieces: Piece[], width: number): Piece[] {
 }
 
 /** The end block: red-alert's condition, or the ship's time when red-alert is absent. */
-function endBlock(view: PanelView, frame: Frame): { color: string; top: string; bottom: string } {
-  if (view.condition) return { color: view.condition.color, top: 'CONDITION', bottom: view.condition.short }
-  return { color: frame.secondary, top: 'SHIP TIME', bottom: clockTime(view.now) }
+function endBlock(view: PanelView, frame: Frame, labels: Labels): { color: string; top: string; bottom: string } {
+  if (view.condition) return { color: view.condition.color, top: labels.condition, bottom: view.condition.short }
+  return { color: frame.secondary, top: labels.clock, bottom: clockTime(view.now) }
 }
 
 /**
@@ -320,8 +367,8 @@ function endBlock(view: PanelView, frame: Frame): { color: string; top: string; 
  * under their segments and the values under the labels. The sidebar holds
  * Claude's state over the stardate; the end block, red-alert's condition.
  *
- *   ▗▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄▄▄▖
- *     STANDBY ▘ HELM            CORE            DILITHIUM T-2H14M  ANTIMATTER  COURSE main         ▝ CONDITION
+ *   ██████████▛ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ▀▀▀▀▀▀▀▀▀▀▀ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ▜███████████
+ *     STANDBY   HELM            CORE            DILITHIUM T-2H14M  ANTIMATTER  COURSE main          CONDITION
  *     80753.1   OPUS 5.5 WARP 9 ▊▊▊▊▊▊▊▊▊▊ 42%  ▊▊▊▊▊▊▊▊▊▊▊▊ 72%   88% T-3D4H  ~/starfleet_panel       GREEN
  */
 export function bridgeRows(view: PanelView, width: number): Piece[][] {
@@ -331,29 +378,29 @@ export function bridgeRows(view: PanelView, width: number): Piece[][] {
   const across = (draw: (entry: { column: Column; width: number }, i: number) => Piece[]) =>
     columns.flatMap((entry, i) => [...(i > 0 ? [{ text: ' ' }] : []), ...draw(entry, i)])
   const segment = (c: Column, i: number) => (view.alert ? (frame.shades[i % frame.shades.length] ?? frame.primary) : c.color)
-  const end = endBlock(view, frame)
+  const end = endBlock(view, frame, labels)
 
+  // The blocks' tops are solid cells, so they meet the rows below whatever the
+  // terminal's line spacing; the bars hang from the top edge, flush with them.
   const top: Piece[] = [
-    { text: '▗', color: frame.primary },
-    { text: '▄'.repeat(SIDEBAR), color: frame.primary },
+    { text: ' '.repeat(SIDEBAR), backgroundColor: frame.primary },
+    { text: '▛', color: frame.primary },
     { text: ' ' },
-    ...across(({ column: c, width: w }, i) => [{ text: '▄'.repeat(w), color: segment(c, i) }]),
+    ...across(({ column: c, width: w }, i) => [{ text: '▀'.repeat(w), color: segment(c, i) }]),
     { text: ' ' },
-    { text: '▄'.repeat(END_BLOCK), color: end.color },
-    { text: '▖', color: end.color },
+    { text: '▜', color: end.color },
+    { text: ' '.repeat(END_BLOCK), backgroundColor: end.color },
   ]
   const middle: Piece[] = [
     { text: blockText(view.isWorking ? labels.working : labels.idle, SIDEBAR), ...blockStyle(view, frame.primary) },
-    { text: '▘', color: frame.primary },
-    { text: ' ' },
+    { text: '  ' },
     ...across(({ column: c, width: w }) => cell(c.label(w - 1), w)),
-    { text: ' ' },
-    { text: '▝', color: end.color },
+    { text: '  ' },
     { text: blockText(end.top, END_BLOCK), ...blockStyle(view, end.color) },
   ]
   const bottom: Piece[] = [
     {
-      text: blockText(stardate(view.now), SIDEBAR),
+      text: blockText(labels.date(view.now), SIDEBAR),
       color: view.alert ? frame.label : LCARS.ink,
       backgroundColor: frame.block,
       bold: true,
@@ -381,7 +428,7 @@ function sidebarLabel(view: PanelView, labels: Labels): string {
 /** The readings as droppable items for the one-row strip. */
 function stripItems(view: PanelView, labels: Labels, frame: Frame): Item[] {
   const r = view.readings
-  if (!r) return [{ priority: 10, pieces: [{ text: 'SENSORS INITIALIZING', color: frame.label }] }]
+  if (!r) return [{ priority: 10, pieces: [{ text: `${labels.loading} ${labels.loadingValue}`, color: frame.label }] }]
   const gap = { text: '  ' }
   const items: Item[] = [{ priority: 10, pieces: [{ text: modelName(r.model), color: LCARS.blue, bold: true }] }]
   const effort = view.labels === 'starfleet' ? warpFactor(r.effort) : (r.effort?.toUpperCase() ?? null)
@@ -389,9 +436,9 @@ function stripItems(view: PanelView, labels: Labels, frame: Frame): Item[] {
   const reading = (label: string, text: string, color: string, priority: number) =>
     items.push({ priority, pieces: [gap, { text: `${label} `, color: frame.label }, { text, color, bold: true }] })
   const ctx = r.context.percent
-  reading(labels.core, ctx === null ? '--' : `${Math.round(ctx)}%`, ctx === null ? frame.label : levelColor(ctx), 9)
-  if (r.fiveHour) reading(labels.fiveHour, `${Math.max(0, Math.round(100 - r.fiveHour.used))}%`, levelColor(r.fiveHour.used), 8)
-  if (r.sevenDay) reading(labels.sevenDay, `${Math.max(0, Math.round(100 - r.sevenDay.used))}%`, levelColor(r.sevenDay.used), 7)
+  reading(labels.core, ctx === null ? '--' : `${Math.round(ctx)}%${labels.used}`, ctx === null ? frame.label : levelColor(ctx), 9)
+  if (r.fiveHour) reading(labels.fiveHour, `${Math.max(0, Math.round(100 - r.fiveHour.used))}%${labels.left}`, levelColor(r.fiveHour.used), 8)
+  if (r.sevenDay) reading(labels.sevenDay, `${Math.max(0, Math.round(100 - r.sevenDay.used))}%${labels.left}`, levelColor(r.sevenDay.used), 7)
   if (r.branch) {
     items.push({
       priority: 4,
@@ -449,7 +496,7 @@ export function reportText(view: PanelView, extras: ReportExtras): string {
   const r = view.readings
   const line = (label: string, meaning: string, value: string) =>
     `${label.padEnd(11)} ${`(${meaning})`.padEnd(20)} ${value}`
-  const out = [`LCARS STATUS REPORT · STARDATE ${stardate(view.now)} · ${clockTime(view.now)}`, '']
+  const out = [`${labels.report} · ${labels.reportDate(view.now)} · ${clockTime(view.now)}`, '']
   if (!r) {
     out.push('Sensors are still initializing.')
   } else {
@@ -488,10 +535,10 @@ export function reportText(view: PanelView, extras: ReportExtras): string {
       : view.condition
         ? view.condition.label.toLowerCase()
         : 'red-alert is not loaded'
-  out.push(line('CONDITION', 'red-alert', condition))
+  out.push(line(labels.condition, 'red-alert', condition))
   out.push(
     '',
-    `Panel: ${extras.layout}${extras.isLayoutOverridden ? ' (this session; /lcars reset follows the setting)' : ''} · labels: ${view.labels} · /lcars bridge | compact | off`,
+    `Panel: ${extras.layout}${extras.isLayoutOverridden ? ' (this session; /lcars reset follows the setting)' : ''} · terms: ${view.labels} · /lcars bridge | compact | off · /lcars starfleet | plain`,
   )
   if (extras.hasStatusLine) {
     out.push(

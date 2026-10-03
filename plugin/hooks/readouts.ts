@@ -48,6 +48,14 @@ export function stardate(ms: number): string {
   return (Math.floor(value * 10) / 10).toFixed(1)
 }
 
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+
+/** The local date, `OCT 02`: the plain counterpart of the stardate. */
+export function shortDate(ms: number): string {
+  const date = new Date(ms)
+  return `${MONTHS[date.getMonth()] ?? ''} ${String(date.getDate()).padStart(2, '0')}`
+}
+
 /** Local wall-clock time, `HH:MM`. */
 export function clockTime(ms: number): string {
   const date = new Date(ms)
