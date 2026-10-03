@@ -3,7 +3,7 @@
 // at any width without a session.
 
 import type { Readings } from '../types'
-import { LCARS, STANDARD_FRAME, alertFrame, fitRow, mix, pill } from './lcars'
+import { LCARS, STANDARD_FRAME, alertFrame, clipPieces, fitRow, merge, mix, pill, widthOf } from './lcars'
 import type { Frame, Item, Piece } from './lcars'
 import {
   cellWidth,
@@ -22,8 +22,11 @@ import {
 
 export type LabelSet = 'starfleet' | 'plain'
 
-/** The condition pill at the panel's end: red-alert's state, in its color. */
-export type Condition = { label: string; color: string }
+/**
+ * red-alert's state as the panel shows it, in its color: `label` in full
+ * (`CONDITION GREEN`), `short` for the end block (`GREEN`, at most 10 cells).
+ */
+export type Condition = { label: string; short: string; color: string }
 
 /** Everything one drawing of the panel depends on. */
 export type PanelView = {
@@ -51,6 +54,7 @@ export const LABELS = {
     sector: 'SECTOR',
     course: 'COURSE',
     env: 'ENV',
+    crew: 'CREW',
     idle: 'STANDBY',
     working: 'ENGAGED',
   },
@@ -63,6 +67,7 @@ export const LABELS = {
     sector: 'DIR',
     course: 'GIT',
     env: 'ENV',
+    crew: 'USER',
     idle: 'IDLE',
     working: 'WORKING',
   },
@@ -70,10 +75,16 @@ export const LABELS = {
 
 type Labels = (typeof LABELS)[LabelSet]
 
-/** Width of the frame's sidebar, in cells: fits `RED ALERT` and `ENGAGED` with a margin. */
-export const SIDEBAR = 11
+/** The left sidebar's width in cells, and the right end block's. */
+const SIDEBAR = 10
+const END_BLOCK = 11
+/** What the elbows take beside the columns: sidebar, fillet and gap; gap, fillet and end block. */
+const LEFT_SPAN = SIDEBAR + 2
+const RIGHT_SPAN = END_BLOCK + 2
 /** Below this width the bridge frame gives way to the one-row strip. */
-export const BRIDGE_MIN_WIDTH = 72
+export const BRIDGE_MIN_WIDTH = 60
+/** The compact strip's sidebar pill: fits `RED ALERT` and `ENGAGED`. */
+const PILL_ROOM = 9
 
 /** Calm, caution, danger: the thresholds of the status line this panel replaces. */
 export function levelColor(percentUsed: number): string {
@@ -86,282 +97,325 @@ function frameOf(view: PanelView): Frame {
   return view.alert ? alertFrame(view.alert.color) : STANDARD_FRAME
 }
 
-function sidebarLabel(view: PanelView, labels: Labels, room: number): string {
-  if (view.alert) {
-    const title = view.alert.title.toUpperCase()
-    return clip(cellWidth(title) <= room ? title : view.alert.level.toUpperCase(), room)
-  }
-  return clip(view.isWorking ? labels.working : labels.idle, room)
-}
-
-/** The sidebar's colors: ink on the frame color, inverted on the dark half of a blink. */
-function sidebarStyle(view: PanelView, frame: Frame): Omit<Piece, 'text'> {
+/** A block's colors: ink on its color, inverted on the dark half of an alert's blink. */
+function blockStyle(view: PanelView, color: string): Omit<Piece, 'text'> {
   return view.alert && view.isBlinkDark
-    ? { color: frame.primary, backgroundColor: mix(frame.primary, LCARS.ink, 0.75), bold: true }
-    : { color: LCARS.ink, backgroundColor: frame.primary, bold: true }
+    ? { color, backgroundColor: mix(color, LCARS.ink, 0.75), bold: true }
+    : { color: LCARS.ink, backgroundColor: color, bold: true }
+}
+
+/** `label` right-aligned in a block `width` cells wide, as LCARS numbers its blocks. */
+function blockText(label: string, width: number): string {
+  return `${clip(label, width - 2).padStart(width - 1)} `
 }
 
 // ---------------------------------------------------------------------------
-// Readouts
+// The bridge layout
 // ---------------------------------------------------------------------------
 
-/**
- * A labelled reading as three items: the label, an optional gauge, the value.
- * The gauge has a priority of its own, so a narrow panel drops the gauges
- * before it drops a reading.
- */
-function reading(
-  gap: Piece,
-  label: string,
-  value: Piece,
-  frame: Frame,
-  priority: number,
-  meter: { percent: number; cells: number; priority: number } | null,
-): Item[] {
-  const items: Item[] = [{ priority, group: label, pieces: [gap, { text: `${label} `, color: frame.label }] }]
-  if (meter && meter.cells > 0) {
-    const g = gauge(meter.percent, meter.cells)
-    const color = value.color ?? frame.label
-    items.push({
-      priority: meter.priority,
-      pieces: [{ text: g.lit, color }, { text: g.dark, color: mix(color, LCARS.ink, 0.6) }, { text: ' ' }],
-    })
-  }
-  items.push({ priority, group: label, pieces: [value] })
-  return items
+/** One column of the bridge frame: a header segment, a label row, a value row. */
+type Column = {
+  priority: number
+  /** Shown only while every column fits at its preferred width. */
+  isOptional: boolean
+  /** Its header segment and label, while no alert repaints the frame. */
+  color: string
+  /** Widths in cells, each with one cell of air after the content. */
+  min: number
+  pref: number
+  label: (room: number) => Piece[]
+  value: (room: number) => Piece[]
 }
 
-/** The readings as droppable items: model and effort, context, the rate-limit windows, cost. */
-function readoutItems(view: PanelView, labels: Labels, frame: Frame, isCompact: boolean): Item[] {
+function column(spec: Omit<Column, 'min' | 'pref' | 'isOptional'> & { min: number; pref: number; isOptional?: boolean }): Column {
+  return { ...spec, isOptional: spec.isOptional ?? false, min: spec.min + 1, pref: Math.max(spec.min, spec.pref) + 1 }
+}
+
+/** A meter and its percentage in `room` cells; the meter shrinks first, then goes. */
+function metered(percent: number, text: string, color: string, room: number): Piece[] {
+  const cells = Math.min(12, room - 1 - text.length)
+  const value: Piece = { text, color, bold: true }
+  if (cells < 3) return [value]
+  const g = gauge(percent, cells)
+  return [{ text: g.lit, color }, { text: g.dark, color: mix(color, LCARS.ink, 0.72) }, { text: ' ' }, value]
+}
+
+/** The readings as columns, in the order they stand. */
+function columnsOf(view: PanelView, labels: Labels, frame: Frame): Column[] {
   const r = view.readings
-  if (!r) return [{ priority: 10, pieces: [{ text: 'SENSORS INITIALIZING', color: frame.label }] }]
-  const gap = { text: isCompact ? '  ' : '   ' }
-  const items: Item[] = []
-
-  items.push({
-    priority: 10,
-    pieces: [
-      ...(isCompact ? [] : [{ text: `${labels.helm} `, color: frame.label }]),
-      { text: modelName(r.model), color: LCARS.blue, bold: true },
-    ],
-  })
-  const warp = warpFactor(r.effort)
-  if (r.effort !== null && warp !== null) {
-    if (view.labels === 'starfleet') {
-      items.push({ priority: 5, pieces: [{ text: ' ' }, { text: warp, color: LCARS.peach, bold: true }] })
-      if (!isCompact) {
-        items.push({ priority: 1, pieces: [{ text: ' ' }, { text: r.effort.toUpperCase(), color: frame.label }] })
-      }
-    } else {
-      items.push({ priority: 5, pieces: [{ text: ' ' }, { text: r.effort.toUpperCase(), color: LCARS.peach, bold: true }] })
-    }
+  const tint = (color: string) => (view.alert ? frame.label : color)
+  if (!r) {
+    return [
+      column({
+        priority: 10,
+        color: LCARS.orange,
+        min: 12,
+        pref: 12,
+        label: () => [{ text: 'SENSORS', color: tint(LCARS.orange) }],
+        value: () => [{ text: 'INITIALIZING', color: frame.label }],
+      }),
+    ]
   }
+  const columns: Column[] = []
+  const minor = (text: string): Piece => ({ text, color: view.alert ? frame.label : LCARS.tan })
 
-  // Dropped first to last as room runs out: the 7-day reset, the effort word,
-  // the gauges, the 5-hour reset, the warp factor, then the readings themselves.
+  const model = modelName(r.model)
+  const effort = view.labels === 'starfleet' ? warpFactor(r.effort) : (r.effort?.toUpperCase() ?? null)
+  columns.push(
+    column({
+      priority: 10,
+      color: LCARS.peach,
+      min: Math.min(14, Math.max(labels.helm.length, cellWidth(model))),
+      pref: Math.max(labels.helm.length, cellWidth(model) + (effort ? effort.length + 1 : 0)),
+      label: () => [{ text: labels.helm, color: tint(LCARS.peach) }],
+      value: room => {
+        const name: Piece = { text: clip(model, room), color: LCARS.blue, bold: true }
+        return effort && cellWidth(model) + 1 + effort.length <= room
+          ? [name, { text: ' ' }, { text: effort, color: LCARS.peach, bold: true }]
+          : [name]
+      },
+    }),
+  )
+
   const ctx = r.context.percent
+  const ctxText = ctx === null ? '--' : `${Math.round(ctx)}%`
   const ctxColor = ctx === null ? frame.label : levelColor(ctx)
-  items.push(
-    ...reading(
-      gap,
-      labels.core,
-      { text: ctx === null ? '--' : `${Math.round(ctx)}%`, color: ctxColor, bold: true },
-      frame,
-      9,
-      isCompact ? null : { percent: ctx ?? 0, cells: 10, priority: 2.5 },
-    ),
+  columns.push(
+    column({
+      priority: 9,
+      color: LCARS.blue,
+      min: Math.max(labels.core.length, 5 + ctxText.length),
+      pref: Math.max(labels.core.length, 11 + ctxText.length),
+      label: () => [{ text: labels.core, color: tint(LCARS.blue) }],
+      value: room => metered(ctx ?? 0, ctxText, ctxColor, room),
+    }),
   )
 
   const windows = [
-    { limit: r.fiveHour, label: labels.fiveHour, priority: 8, resetPriority: 3, cells: 6 },
-    { limit: r.sevenDay, label: labels.sevenDay, priority: 7, resetPriority: 0, cells: 0 },
+    { limit: r.fiveHour, label: labels.fiveHour, priority: 8, color: LCARS.lavender, meter: 12 },
+    { limit: r.sevenDay, label: labels.sevenDay, priority: 6, color: LCARS.violet, meter: 0 },
   ]
   for (const w of windows) {
     if (!w.limit) continue
     const left = Math.max(0, Math.round(100 - w.limit.used))
-    items.push(
-      ...reading(
-        gap,
-        w.label,
-        { text: `${left}%`, color: levelColor(w.limit.used), bold: true },
-        frame,
-        w.priority,
-        isCompact ? null : { percent: left, cells: w.cells, priority: 2 },
-      ),
+    const text = `${left}%`
+    const color = levelColor(w.limit.used)
+    const reset = w.limit.resetsAt === null ? '' : countdown(w.limit.resetsAt - view.now)
+    const hasMeter = w.meter > 0
+    columns.push(
+      column({
+        priority: w.priority,
+        color: w.color,
+        min: Math.max(w.label.length, hasMeter ? 5 + text.length : text.length),
+        pref: hasMeter
+          ? Math.max(w.label.length + (reset ? reset.length + 1 : 0), w.meter + 1 + text.length)
+          : Math.max(w.label.length, text.length + (reset ? reset.length + 1 : 0)),
+        label: room => {
+          const name: Piece = { text: w.label, color: tint(w.color) }
+          return hasMeter && reset && w.label.length + 1 + reset.length <= room ? [name, { text: ' ' }, minor(reset)] : [name]
+        },
+        value: room => {
+          if (hasMeter) return metered(left, text, color, room)
+          const value: Piece = { text, color, bold: true }
+          return reset && text.length + 1 + reset.length <= room ? [value, { text: ' ' }, minor(reset)] : [value]
+        },
+      }),
     )
-    if (w.limit.resetsAt !== null && !isCompact) {
-      items.push({
-        priority: w.resetPriority,
-        pieces: [{ text: ' ' }, { text: countdown(w.limit.resetsAt - view.now), color: frame.label }],
-      })
-    }
   }
 
+  const path = homePath(r.cwd, r.home)
+  const where = r.branch ? `${labels.course} ${r.branch}` : labels.sector
+  const wherePref = Math.min(40, Math.max(cellWidth(where), cellWidth(path)))
+  columns.push(
+    column({
+      priority: 7,
+      color: LCARS.sand,
+      min: Math.min(12, wherePref),
+      pref: wherePref,
+      label: () =>
+        r.branch
+          ? [{ text: `${labels.course} `, color: tint(LCARS.sand) }, { text: r.branch, color: LCARS.violet, bold: true }]
+          : [{ text: labels.sector, color: tint(LCARS.sand) }],
+      value: room => [{ text: clipStart(path, room), color: LCARS.sand, bold: true }],
+    }),
+  )
+
+  const optional = (priority: number, color: string, label: string, value: Piece) => {
+    const room = Math.min(24, Math.max(label.length, cellWidth(value.text)))
+    columns.push(
+      column({
+        priority,
+        isOptional: true,
+        color,
+        min: room,
+        pref: room,
+        label: () => [{ text: label, color: tint(color) }],
+        value: width => [{ ...value, text: clip(value.text, width) }],
+      }),
+    )
+  }
+  if (r.pyenv) optional(5, LCARS.tan, labels.env, { text: r.pyenv, color: LCARS.peach, bold: true })
   if (view.showCost && r.costUsd !== null) {
-    items.push({
-      priority: 0,
-      pieces: [gap, { text: `${labels.cost} `, color: frame.label }, { text: `$${r.costUsd.toFixed(2)}`, color: LCARS.sand }],
-    })
-  }
-  return items
-}
-
-/** Where the ship is: directory, branch, Python env, user@host, between bar segments. */
-function navItems(view: PanelView, labels: Labels, frame: Frame): Item[] {
-  const r = view.readings
-  if (!r) return []
-  const items: Item[] = [
-    {
-      priority: 9,
-      pieces: [
-        { text: ' ' },
-        { text: `${labels.sector} `, color: frame.label },
-        { text: clipStart(homePath(r.cwd, r.home), 40), color: LCARS.sand, bold: true },
-        { text: ' ' },
-      ],
-    },
-  ]
-  if (r.branch) {
-    items.push({
-      priority: 8,
-      pieces: [
-        { text: '▀▀', color: frame.accent },
-        { text: ' ' },
-        { text: `${labels.course} `, color: frame.label },
-        { text: clip(r.branch, 32), color: LCARS.violet, bold: true },
-        { text: ' ' },
-      ],
-    })
-  }
-  if (r.pyenv) {
-    items.push({
-      priority: 6,
-      pieces: [
-        { text: '▀▀', color: frame.secondary },
-        { text: ' ' },
-        { text: `${labels.env} `, color: frame.label },
-        { text: clip(r.pyenv, 20), color: LCARS.peach, bold: true },
-        { text: ' ' },
-      ],
-    })
+    optional(4, LCARS.orange, labels.cost, { text: `$${r.costUsd.toFixed(2)}`, color: LCARS.sand, bold: true })
   }
   if (view.showUserHost && r.user) {
-    items.push({
-      priority: 4,
-      pieces: [
-        { text: '▀▀', color: frame.accent },
-        { text: ' ' },
-        { text: clip(r.host ? `${r.user}@${r.host}` : r.user, 32), color: frame.label },
-        { text: ' ' },
-      ],
-    })
+    optional(3, LCARS.violet, labels.crew, { text: r.host ? `${r.user}@${r.host}` : r.user, color: frame.label })
   }
-  return items
+  return columns
 }
 
-// ---------------------------------------------------------------------------
-// Layouts
-// ---------------------------------------------------------------------------
+/**
+ * Picks the columns that fit `room` cells and sizes them: optional columns
+ * leave first, while the rest do not fit at their preferred widths; then the
+ * least important go until the rest fit at their least. Each column grows to
+ * its preferred width, most important first, and what is left is shared out.
+ */
+function allocate(columns: readonly Column[], room: number): { column: Column; width: number }[] {
+  const total = (list: readonly Column[], key: 'min' | 'pref') =>
+    list.reduce((n, c) => n + c[key], 0) + Math.max(0, list.length - 1)
+  const withoutLowest = (list: readonly Column[], isCandidate: (c: Column) => boolean) => {
+    let lowest = -1
+    list.forEach((c, i) => {
+      const current = list[lowest]
+      if (isCandidate(c) && (current === undefined || c.priority < current.priority)) lowest = i
+    })
+    return lowest === -1 ? list : list.filter((_, i) => i !== lowest)
+  }
+  let active = [...columns]
+  while (total(active, 'pref') > room) {
+    const next = withoutLowest(active, c => c.isOptional)
+    if (next === active) break
+    active = [...next]
+  }
+  while (total(active, 'min') > room && active.length > 1) active = [...withoutLowest(active, () => true)]
+
+  const widths = active.map(c => c.min)
+  let extra = room - total(active, 'min')
+  const byImportance = active.map((_, i) => i).sort((a, b) => (active[b]?.priority ?? 0) - (active[a]?.priority ?? 0))
+  for (const i of byImportance) {
+    const add = Math.max(0, Math.min(extra, (active[i]?.pref ?? 0) - (widths[i] ?? 0)))
+    widths[i] = (widths[i] ?? 0) + add
+    extra -= add
+  }
+  const each = Math.floor(extra / active.length)
+  const last = active.length - 1
+  return active.map((c, i) => ({ column: c, width: (widths[i] ?? 0) + each + (i === last ? extra - each * active.length : 0) }))
+}
+
+/** `pieces` in a column `width` cells wide: cut to leave one cell of air, then padded. */
+function cell(pieces: Piece[], width: number): Piece[] {
+  const kept = clipPieces(pieces, width - 1)
+  return [...kept, { text: ' '.repeat(Math.max(0, width - widthOf(kept))) }]
+}
+
+/** The end block: red-alert's condition, or the ship's time when red-alert is absent. */
+function endBlock(view: PanelView, frame: Frame): { color: string; top: string; bottom: string } {
+  if (view.condition) return { color: view.condition.color, top: 'CONDITION', bottom: view.condition.short }
+  return { color: frame.secondary, top: 'SHIP TIME', bottom: clockTime(view.now) }
+}
 
 /**
- * The bridge layout: a three-row LCARS frame. An elbow bar with the stardate
- * on top, the sidebar and the readouts in the middle, an elbow bar with the
- * ship's position and red-alert's condition below.
+ * The bridge layout, an LCARS ops console in three rows: elbows at both
+ * ends, a header bar cut into one colored segment per column, the labels
+ * under their segments and the values under the labels. The sidebar holds
+ * Claude's state over the stardate; the end block, red-alert's condition.
  *
- *   ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ STARDATE 80753.2 ▄▄▄▄ 22:15 ▄▄▄▖
- *       STANDBY ▌ HELM OPUS 5.5 WARP 9 XHIGH   CORE ▰▰▰▰▱▱▱▱▱▱ 42%   …
- *   ▝▀▀▀▀▀▀▀▀▀▀▀ SECTOR ~/app ▀▀ COURSE main ▀▀▀▀▀▀▀▀▀▀ ▐ CONDITION GREEN ▌
+ *   ▗▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄▄▄▖
+ *     STANDBY ▘ HELM            CORE            DILITHIUM T-2H14M  ANTIMATTER  COURSE main         ▝ CONDITION
+ *     80753.1   OPUS 5.5 WARP 9 ▊▊▊▊▊▊▊▊▊▊ 42%  ▊▊▊▊▊▊▊▊▊▊▊▊ 72%   88% T-3D4H  ~/starfleet_panel       GREEN
  */
 export function bridgeRows(view: PanelView, width: number): Piece[][] {
   const frame = frameOf(view)
   const labels = LABELS[view.labels]
+  const columns = allocate(columnsOf(view, labels, frame), width - LEFT_SPAN - RIGHT_SPAN)
+  const across = (draw: (entry: { column: Column; width: number }, i: number) => Piece[]) =>
+    columns.flatMap((entry, i) => [...(i > 0 ? [{ text: ' ' }] : []), ...draw(entry, i)])
+  const segment = (c: Column, i: number) => (view.alert ? (frame.shades[i % frame.shades.length] ?? frame.primary) : c.color)
+  const end = endBlock(view, frame)
 
-  const top = fitRow(
+  const top: Piece[] = [
+    { text: '▗', color: frame.primary },
+    { text: '▄'.repeat(SIDEBAR), color: frame.primary },
+    { text: ' ' },
+    ...across(({ column: c, width: w }, i) => [{ text: '▄'.repeat(w), color: segment(c, i) }]),
+    { text: ' ' },
+    { text: '▄'.repeat(END_BLOCK), color: end.color },
+    { text: '▖', color: end.color },
+  ]
+  const middle: Piece[] = [
+    { text: blockText(view.isWorking ? labels.working : labels.idle, SIDEBAR), ...blockStyle(view, frame.primary) },
+    { text: '▘', color: frame.primary },
+    { text: ' ' },
+    ...across(({ column: c, width: w }) => cell(c.label(w - 1), w)),
+    { text: ' ' },
+    { text: '▝', color: end.color },
+    { text: blockText(end.top, END_BLOCK), ...blockStyle(view, end.color) },
+  ]
+  const bottom: Piece[] = [
     {
-      left: [
-        { text: '▗', color: frame.primary },
-        { text: '▄'.repeat(SIDEBAR + 4), color: frame.primary },
-        { text: ' ' },
-      ],
-      items: [
-        {
-          priority: 3,
-          pieces: [
-            { text: ' ' },
-            { text: 'STARDATE ', color: frame.label },
-            { text: stardate(view.now), color: LCARS.sand, bold: true },
-            { text: ' ' },
-          ],
-        },
-        { priority: 1, pieces: [{ text: '▄▄▄▄', color: frame.accent }] },
-        { priority: 2, pieces: [{ text: ' ' }, { text: clockTime(view.now), color: LCARS.sand }, { text: ' ' }] },
-      ],
-      fillAt: 0,
-      fill: cells => [{ text: '▄'.repeat(cells), color: frame.secondary }],
-      right: [{ text: '▄▄▄▖', color: frame.primary }],
-      minFill: 4,
+      text: blockText(stardate(view.now), SIDEBAR),
+      color: view.alert ? frame.label : LCARS.ink,
+      backgroundColor: frame.block,
+      bold: true,
     },
-    width,
-  )
+    { text: '  ' },
+    ...across(({ column: c, width: w }) => cell(c.value(w - 1), w)),
+    { text: '  ' },
+    { text: blockText(end.bottom, END_BLOCK), ...blockStyle(view, end.color) },
+  ]
+  return [merge(top), merge(middle), merge(bottom)]
+}
 
-  const middle = fitRow(
-    {
-      left: [
-        { text: `${sidebarLabel(view, labels, SIDEBAR - 2).padStart(SIDEBAR - 1)} `, ...sidebarStyle(view, frame) },
-        { text: '▌', color: frame.primary },
-        { text: ' ' },
-      ],
-      items: readoutItems(view, labels, frame, false),
-      fillAt: Number.POSITIVE_INFINITY,
-      fill: cells => [{ text: ' '.repeat(cells) }],
-      right: [],
-    },
-    width,
-  )
+// ---------------------------------------------------------------------------
+// The compact layout
+// ---------------------------------------------------------------------------
 
-  const nav = navItems(view, labels, frame)
-  const bottom = fitRow(
-    {
-      left: [
-        { text: '▝', color: frame.primary },
-        { text: '▀'.repeat(SIDEBAR + 1), color: frame.primary },
-      ],
-      items: nav,
-      fillAt: nav.length,
-      fill: cells => [{ text: '▀'.repeat(cells), color: frame.secondary }],
-      right: view.condition
-        ? [{ text: ' ' }, ...pill(view.condition.label, view.condition.color)]
-        : [{ text: ' ' }, { text: '▀▀▀▘', color: frame.primary }],
-      minFill: 3,
-    },
-    width,
-  )
+function sidebarLabel(view: PanelView, labels: Labels): string {
+  if (view.alert) {
+    const title = view.alert.title.toUpperCase()
+    return clip(cellWidth(title) <= PILL_ROOM ? title : view.alert.level.toUpperCase(), PILL_ROOM)
+  }
+  return view.isWorking ? labels.working : labels.idle
+}
 
-  return [top, middle, bottom]
+/** The readings as droppable items for the one-row strip. */
+function stripItems(view: PanelView, labels: Labels, frame: Frame): Item[] {
+  const r = view.readings
+  if (!r) return [{ priority: 10, pieces: [{ text: 'SENSORS INITIALIZING', color: frame.label }] }]
+  const gap = { text: '  ' }
+  const items: Item[] = [{ priority: 10, pieces: [{ text: modelName(r.model), color: LCARS.blue, bold: true }] }]
+  const effort = view.labels === 'starfleet' ? warpFactor(r.effort) : (r.effort?.toUpperCase() ?? null)
+  if (effort) items.push({ priority: 5, pieces: [{ text: ' ' }, { text: effort, color: LCARS.peach, bold: true }] })
+  const reading = (label: string, text: string, color: string, priority: number) =>
+    items.push({ priority, pieces: [gap, { text: `${label} `, color: frame.label }, { text, color, bold: true }] })
+  const ctx = r.context.percent
+  reading(labels.core, ctx === null ? '--' : `${Math.round(ctx)}%`, ctx === null ? frame.label : levelColor(ctx), 9)
+  if (r.fiveHour) reading(labels.fiveHour, `${Math.max(0, Math.round(100 - r.fiveHour.used))}%`, levelColor(r.fiveHour.used), 8)
+  if (r.sevenDay) reading(labels.sevenDay, `${Math.max(0, Math.round(100 - r.sevenDay.used))}%`, levelColor(r.sevenDay.used), 7)
+  if (r.branch) {
+    items.push({
+      priority: 4,
+      pieces: [gap, { text: `${labels.course} `, color: frame.label }, { text: clip(r.branch, 24), color: LCARS.violet, bold: true }],
+    })
+  }
+  return items
 }
 
 /**
- * The compact layout: one row, as red-alert's idle strip is drawn.
+ * The compact layout: one row, drawn as red-alert's idle strip is.
  *
  *   ▐ STANDBY ▌ OPUS 5.5 WARP 9  CORE 42%  DILITHIUM 72%  COURSE main ━━━━━━━ ▐ GREEN ▌
  */
 export function compactRow(view: PanelView, width: number): Piece[] {
   const frame = frameOf(view)
   const labels = LABELS[view.labels]
-  const style = sidebarStyle(view, frame)
-  const items = readoutItems(view, labels, frame, true)
-  const r = view.readings
-  if (r?.branch) {
-    items.push({
-      priority: 4,
-      pieces: [{ text: '  ' }, { text: `${labels.course} `, color: frame.label }, { text: clip(r.branch, 24), color: LCARS.violet, bold: true }],
-    })
-  }
+  const style = blockStyle(view, frame.primary)
+  const items = stripItems(view, labels, frame)
   return fitRow(
     {
       left: [
         { text: '▐', color: style.backgroundColor },
-        { text: ` ${sidebarLabel(view, labels, SIDEBAR - 2)} `, ...style },
+        { text: ` ${sidebarLabel(view, labels)} `, ...style },
         { text: '▌', color: style.backgroundColor },
         { text: ' ' },
       ],
@@ -371,7 +425,7 @@ export function compactRow(view: PanelView, width: number): Piece[] {
         cells >= 3
           ? [{ text: ' ' }, { text: '━'.repeat(cells - 2), color: frame.secondary }, { text: ' ' }]
           : [{ text: ' '.repeat(cells) }],
-      right: view.condition ? pill(view.condition.label.replace(/^CONDITION /, ''), view.condition.color) : [],
+      right: view.condition ? pill(view.condition.short, view.condition.color) : [],
       minFill: 2,
     },
     width,

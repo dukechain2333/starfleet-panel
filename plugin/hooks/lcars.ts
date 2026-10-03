@@ -21,23 +21,26 @@ export const LCARS = {
   ink: '#000000',
 } as const
 
-/** The four colors a frame is painted in. */
+/** The colors a frame is painted in. */
 export type Frame = {
   /** The elbows and the sidebar. */
   primary: string
-  /** The long bars. */
+  /** The rule of the compact strip, and the end block when red-alert is absent. */
   secondary: string
-  /** The short bar segments. */
-  accent: string
+  /** The sidebar's lower block. */
+  block: string
   /** Labels printed on black. */
   label: string
+  /** The header segments, one per column, while an alert repaints the frame. */
+  shades: readonly string[]
 }
 
 export const STANDARD_FRAME: Frame = {
   primary: LCARS.orange,
   secondary: LCARS.lavender,
-  accent: LCARS.peach,
+  block: LCARS.peach,
   label: LCARS.tan,
+  shades: [],
 }
 
 type Rgb = readonly [number, number, number]
@@ -64,8 +67,15 @@ export function alertFrame(color: string): Frame {
   return {
     primary: color,
     secondary: mix(color, LCARS.ink, 0.45),
-    accent: mix(color, '#FFFFFF', 0.35),
-    label: mix(color, '#FFFFFF', 0.5),
+    block: mix(color, LCARS.ink, 0.45),
+    label: mix(color, '#FFFFFF', 0.55),
+    shades: [
+      mix(color, '#FFFFFF', 0.35),
+      color,
+      mix(color, LCARS.ink, 0.35),
+      mix(color, '#FFFFFF', 0.15),
+      mix(color, LCARS.ink, 0.15),
+    ],
   }
 }
 
@@ -101,7 +111,7 @@ export function widthOf(pieces: readonly Piece[]): number {
 }
 
 /** Pieces cut to `max` cells, the last one kept ends in `…`. */
-function clipPieces(pieces: readonly Piece[], max: number): Piece[] {
+export function clipPieces(pieces: readonly Piece[], max: number): Piece[] {
   const out: Piece[] = []
   let left = max
   for (const piece of pieces) {

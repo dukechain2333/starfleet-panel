@@ -1,6 +1,6 @@
 {
   "name": "starfleet-panel",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "An LCARS status panel under the Claude Code prompt, in the style of a 24th-century Starfleet console; follows red-alert's alert condition.",
   "author": { "name": "dukechain2333" },
   "homepage": "https://github.com/dukechain2333/starfleet-panel",
@@ -12,7 +12,7 @@
     "layout": {
       "type": "string",
       "title": "Panel layout",
-      "description": "bridge: a three-row LCARS frame; compact: one row; off: only Claude Code's own hint line.",
+      "description": "bridge: the three-row LCARS ops console; compact: one row; off: only Claude Code's own hint line.",
       "default": "bridge",
       "options": ["bridge", "compact", "off"]
     },
@@ -26,13 +26,13 @@
     "showCost": {
       "type": "boolean",
       "title": "Show session cost",
-      "description": "Add the session's cost (ENERGY) to the readouts.",
+      "description": "Add the ENERGY column (the session's cost) on wide terminals.",
       "default": false
     },
     "showUserHost": {
       "type": "boolean",
       "title": "Show user@host",
-      "description": "Add user@host to the bottom bar.",
+      "description": "Add the CREW column (user@host) on wide terminals.",
       "default": true
     },
     "followRedAlert": {

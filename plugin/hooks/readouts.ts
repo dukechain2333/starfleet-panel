@@ -82,10 +82,10 @@ export function tokenCount(tokens: number): string {
   return String(Math.round(tokens))
 }
 
-/** A segmented gauge, `cells` wide: the lit part and the dark part. */
+/** A segmented LCARS meter, `cells` wide: the lit segments and the dark ones. */
 export function gauge(percent: number, cells: number): { lit: string; dark: string } {
   const lit = Math.max(0, Math.min(cells, Math.round((percent / 100) * cells)))
-  return { lit: '▰'.repeat(lit), dark: '▱'.repeat(cells - lit) }
+  return { lit: '▊'.repeat(lit), dark: '▊'.repeat(cells - lit) }
 }
 
 /** `/home/me/src/app` → `~/src/app` when `home` is `/home/me`. */

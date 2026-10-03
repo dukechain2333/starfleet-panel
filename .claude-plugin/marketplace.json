@@ -8,8 +8,8 @@
     {
       "name": "starfleet-panel",
       "source": "./plugin",
-      "description": "Model, effort, context window, rate limits, directory and git branch as an LCARS frame under the prompt; follows red-alert's alert condition.",
-      "version": "0.1.0",
+      "description": "Model, effort, context window, rate limits, git branch and directory as an LCARS ops console under the prompt; follows red-alert's alert condition.",
+      "version": "0.2.0",
       "license": "MIT",
       "homepage": "https://github.com/dukechain2333/starfleet-panel"
     }

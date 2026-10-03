@@ -246,15 +246,18 @@ function alertTitle(active: RedAlertActive): string {
 }
 
 function conditionOf(link: RedAlertLink | null, active: RedAlertActive | null): Condition | null {
-  if (active) return { label: alertTitle(active), color: active.color }
+  if (active) {
+    const title = alertTitle(active)
+    return { label: title, short: title.length <= 10 ? title : active.level.toUpperCase().slice(0, 10), color: active.color }
+  }
   if (!link) return null
-  if (link.checkedAt === 0) return { label: 'LINKING', color: LCARS.tan }
-  if (!link.online) return { label: 'ALERTS OFFLINE', color: LCARS.red }
-  if (link.mute) return { label: 'GREEN · MUTED', color: LCARS.peach }
-  return { label: 'CONDITION GREEN', color: LCARS.green }
+  if (link.checkedAt === 0) return { label: 'LINKING', short: 'LINKING', color: LCARS.tan }
+  if (!link.online) return { label: 'ALERTS OFFLINE', short: 'OFFLINE', color: LCARS.red }
+  if (link.mute) return { label: 'GREEN · MUTED', short: 'MUTED', color: LCARS.peach }
+  return { label: 'CONDITION GREEN', short: 'GREEN', color: LCARS.green }
 }
 
-/** Blinks the sidebar while red-alert animates a red or yellow alert, as every console on the ship does. */
+/** Blinks the state and condition blocks while red-alert animates a red or yellow alert, as every console on the ship does. */
 async function syncBlink($: EngineInterface): Promise<void> {
   const active = await redAlertActive($)
   const now = await $.clock.now()

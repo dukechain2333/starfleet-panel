@@ -2,25 +2,27 @@
 
 **An LCARS status panel for Claude Code.** The readouts that usually sit
 under the prompt (model, effort, context window, rate limits, directory,
-git branch) are drawn as a 24th-century Starfleet console from *The Next
-Generation*: an elbowed frame, a sidebar, segmented bars and the stardate.
+git branch) are drawn as an ops console from *The Next Generation*: elbows
+at both ends, a header bar cut into one colored segment per readout, the
+labels under their segments and the values under the labels.
 It's built to sit beside [red-alert](https://github.com/dukechain2333/red-alert).
 When red-alert sounds the klaxon, the panel goes to RED ALERT with it.
 
 ![starfleet-panel under the Claude Code prompt: the bridge layout, a red alert with red-alert, and the compact layout](docs/preview.svg)
 
 - **Everything at a glance, LCARS style.** Model and effort (as a warp
-  factor), a context-window gauge, the 5-hour and 7-day limits with
-  countdowns to their reset, the working directory, git branch and Python
-  env, the local time and the stardate.
+  factor), segmented meters for the context window and the 5-hour limit,
+  the 7-day limit, countdowns to each reset, the git branch and working
+  directory, and the stardate.
 - **Made for red-alert.** It shows red-alert's condition (green, muted,
   offline). While an alert is up, it repaints the whole frame in the alert's
-  color and blinks the sidebar for as long as red-alert's klaxon animates.
+  reds and blinks with red-alert's klaxon for as long as it animates.
   The two mods never touch each other's screen space, keys, commands or
   state.
-- **Fits any width.** It's a three-row frame on terminals 76 columns wide
-  and up. As the terminal narrows, it drops the least important readouts
-  first, and below 76 columns it becomes a one-row strip.
+- **Fits any width.** The columns share the width out. As the terminal
+  narrows, the meters shrink first, then the least important columns go,
+  and below 64 columns the frame becomes a one-row strip. Wide terminals
+  gain the ENV, ENERGY and CREW columns.
 - **Local and free.** It makes no model calls and no network requests. The
   figures come from the same in-process data the status line uses.
 
@@ -28,18 +30,17 @@ When red-alert sounds the klaxon, the panel goes to RED ALERT with it.
 
 | Panel label | Plain label | What it shows |
 | --- | --- | --- |
-| sidebar | | `STANDBY` while idle, `ENGAGED` while Claude works (plain: `IDLE` / `WORKING`); the alert's title during an alert |
+| sidebar, upper block | | `STANDBY` while idle, `ENGAGED` while Claude works (plain: `IDLE` / `WORKING`) |
+| sidebar, lower block | | the stardate, in TNG's broadcast reckoning: 41000 when the show began in 1987, a thousand units a year |
 | `HELM` | `MODEL` | the model (`OPUS 5.5`) and reasoning effort as a warp factor: low `IMPULSE`, medium `WARP 5`, high `WARP 7`, xhigh `WARP 9`, max `WARP 9.6` |
-| `CORE` | `CTX` | context window used, with a 10-cell gauge |
-| `DILITHIUM` | `5H` | the 5-hour limit: how much is **left**, a gauge, and `T-2H14M` to the reset |
+| `CORE` | `CTX` | context window used, with a segmented meter |
+| `DILITHIUM` | `5H` | the 5-hour limit: how much is **left**, a meter, and `T-2H14M` to the reset |
 | `ANTIMATTER` | `7D` | the 7-day limit: how much is left and `T-3D4H` to the reset |
-| `ENERGY` | `COST` | the session's cost (off by default) |
-| `SECTOR` | `DIR` | the working directory, `~` for home |
-| `COURSE` | `GIT` | the git branch, or `@<sha>` when detached |
-| `ENV` | `ENV` | the active conda env (not `base`) or virtualenv |
-| | | `user@host` (can be turned off) |
-| `STARDATE` | | the date in TNG's broadcast reckoning: 41000 when the show began in 1987, a thousand units a year |
-| condition pill | | red-alert's state: `CONDITION GREEN`, `GREEN · MUTED`, `ALERTS OFFLINE`, or the alert itself |
+| `COURSE` / `SECTOR` | `GIT` / `DIR` | the git branch (or `@<sha>` when detached) over the working directory, `~` for home; `SECTOR` outside a repository |
+| `ENV` | `ENV` | the active conda env (not `base`) or virtualenv, on wide terminals |
+| `ENERGY` | `COST` | the session's cost, on wide terminals (off by default) |
+| `CREW` | `USER` | `user@host`, on wide terminals (can be turned off) |
+| end block | | red-alert's condition: `CONDITION` over `GREEN`, `MUTED`, `OFFLINE` or the alert; without red-alert, `SHIP TIME` over the clock |
 
 Readings turn yellow at 60% used and red at 80%. These are the thresholds of
 the classic `statusLine` script the panel replaces. The 5-hour and 7-day
@@ -53,12 +54,12 @@ and this panel below it, in the same LCARS palette.
 
 | red-alert's state | The panel |
 | --- | --- |
-| online | `▐ CONDITION GREEN ▌` at the end of the bottom bar |
-| muted | `▐ GREEN · MUTED ▌` |
-| offline | `▐ ALERTS OFFLINE ▌` |
-| an alert is up | the frame turns the alert's color, and the sidebar and pill read `RED ALERT` (or the level's title) |
-| a red or yellow alert animating | the sidebar blinks with it, then holds steady until you silence or dismiss the alert (`0`, red-alert's key) |
-| not installed | the bar ends in an elbow; everything else works the same |
+| online | the end block reads `CONDITION` / `GREEN` |
+| muted | `CONDITION` / `MUTED` |
+| offline | `CONDITION` / `OFFLINE` |
+| an alert is up | the whole frame turns the alert's reds and the end block reads `RED ALERT` (or the level's title) |
+| a red or yellow alert animating | the state block and the end block blink with the klaxon, then hold steady until you silence or dismiss the alert (`0`, red-alert's key) |
+| not installed | the end block keeps `SHIP TIME`; everything else works the same |
 
 The mods don't conflict because each one draws, binds and stores only what
 it owns:
@@ -112,10 +113,10 @@ The panel needs nothing from you. It refreshes the context window and limits
 every 2 seconds. It re-reads the directory, branch, env and settings after
 every turn and every 30 seconds.
 
-- **Layouts:** `bridge`, the three-row frame (the default); `compact`, one
-  row in the style of red-alert's idle strip; `off`, only Claude Code's own
-  hint line. Bridge falls back to compact on terminals narrower than 76
-  columns and in the desktop app.
+- **Layouts:** `bridge`, the three-row ops console (the default);
+  `compact`, one row in the style of red-alert's idle strip; `off`, only
+  Claude Code's own hint line. Bridge falls back to compact on terminals
+  narrower than 64 columns and in the desktop app.
 - **`/lcars`** prints a full status report. It lists every reading beside
   what its Starfleet name stands for, which makes it a legend too:
 
@@ -144,8 +145,8 @@ Set these in `/config` (or `claude plugin configure starfleet-panel`):
 | --- | --- | --- |
 | `layout` | `bridge` | `bridge`, `compact` or `off` |
 | `labels` | `starfleet` | `starfleet` (HELM, CORE, DILITHIUM…) or `plain` (MODEL, CTX, 5H…) |
-| `showCost` | `false` | add the session's cost |
-| `showUserHost` | `true` | add `user@host` to the bottom bar |
+| `showCost` | `false` | add the ENERGY column (the session's cost) on wide terminals |
+| `showUserHost` | `true` | add the CREW column (`user@host`) on wide terminals |
 | `followRedAlert` | `true` | show red-alert's condition and repaint with its alerts |
 | `refreshSeconds` | `2` | how often the context window and limits are re-read |
 

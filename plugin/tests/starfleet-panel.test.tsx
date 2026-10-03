@@ -112,14 +112,17 @@ describe('the panel under the prompt', () => {
 
     const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...hint(150) })
     const top = await ui.find({ key: 'lcars:row:0' })
-    const middle = await ui.find({ key: 'lcars:row:1' })
-    const bottom = await ui.find({ key: 'lcars:row:2' })
-    expect(top?.text).toMatch(/^▗▄+ ▄+ STARDATE \d{5}\.\d ▄▄▄▄ \d\d:\d\d ▄▄▄▖$/)
-    expect(middle?.text).toContain('STANDBY ▌ HELM OPUS 5.5 WARP 9 XHIGH   CORE ▰▰▰▰▱▱▱▱▱▱ 42%')
-    expect(middle?.text).toContain('DILITHIUM ▰▰▰▰▱▱ 72% T-2H14M   ANTIMATTER 88% T-3D4H')
-    expect(bottom?.text).toContain('SECTOR ~/enterprise ▀▀ COURSE main ▀▀ ENV warpcore ▀▀ picard@enterprise')
-    // red-alert is not loaded: the bar ends in an elbow, not a condition pill
-    expect(bottom?.text).toMatch(/ ▀▀▀▘$/)
+    const labels = await ui.find({ key: 'lcars:row:1' })
+    const values = await ui.find({ key: 'lcars:row:2' })
+    // an elbow at each end, one header segment per column: seven columns at this width
+    expect(top?.text).toMatch(/^▗▄{10}( ▄+){7} ▄{11}▖$/)
+    expect(labels?.text).toMatch(
+      /^ {2}STANDBY ▘ HELM +CORE +DILITHIUM T-2H14M +ANTIMATTER +COURSE main +ENV +CREW +▝ SHIP TIME $/,
+    )
+    expect(values?.text).toMatch(
+      /^ {2}\d{5}\.\d {3}OPUS 5\.5 WARP 9 +▊{12} 42% +▊{12} 72% +88% T-3D4H +~\/enterprise +warpcore +picard@enterprise +\d\d:\d\d $/,
+    )
+    // red-alert is not loaded: the end block keeps ship time instead of the condition
     // the engine's hint line stays, above the frame
     expect(await ui.find({ type: 'Text', text: '? for shortcuts' })).toBeDefined()
     // red-alert's `0` and its band items stay its own: the panel has nothing to press
@@ -131,7 +134,7 @@ describe('the panel under the prompt', () => {
     ship(on)
     await $.session.start(START)
     const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...hint(150, true) })
-    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toMatch(/^ +ENGAGED ▌/)
+    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toMatch(/^ +ENGAGED ▘/)
     await ui.unmount()
   })
 
@@ -154,7 +157,7 @@ describe('the panel under the prompt', () => {
     ship(on, { settings: { effortLevel: 'high', modelSettings: { 'claude-opus-5-5': { effortLevel: 'max' } } } })
     await $.session.start(START)
     const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...hint(150) })
-    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toContain('HELM OPUS 5.5 WARP 9.6 MAX')
+    expect((await ui.find({ key: 'lcars:row:2' }))?.text).toContain('OPUS 5.5 WARP 9.6')
     await ui.unmount()
   })
 
@@ -162,10 +165,12 @@ describe('the panel under the prompt', () => {
     ship(on, { rateLimits: [], branch: null })
     await $.session.start(START)
     const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...hint(150) })
-    const middle = (await ui.find({ key: 'lcars:row:1' }))?.text ?? ''
-    expect(middle).toContain('CORE ▱▱▱▱▱▱▱▱▱▱ --')
-    expect(middle).not.toContain('DILITHIUM')
-    expect((await ui.find({ key: 'lcars:row:2' }))?.text).not.toContain('COURSE')
+    const labels = (await ui.find({ key: 'lcars:row:1' }))?.text ?? ''
+    expect(labels).not.toContain('DILITHIUM')
+    expect(labels).not.toContain('ANTIMATTER')
+    expect(labels).toContain('SECTOR')
+    expect(labels).not.toContain('COURSE')
+    expect((await ui.find({ key: 'lcars:row:2' }))?.text).toMatch(/▊+ -- /)
     await ui.unmount()
   })
 
@@ -177,7 +182,7 @@ describe('the panel under the prompt', () => {
     options.percent = 7
     await clock.advance(2000)
     const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...hint(150) })
-    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toContain('CORE ▰▱▱▱▱▱▱▱▱▱ 7%')
+    expect((await ui.find({ key: 'lcars:row:2' }))?.text).toMatch(/▊+ 7% /)
     await ui.unmount()
   })
 
@@ -196,7 +201,8 @@ describe('with red-alert', () => {
     ship(on, { redAlert: { link: RED_ALERT_ONLINE, active: null } })
     await $.session.start(START)
     const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...hint(150) })
-    expect((await ui.find({ key: 'lcars:row:2' }))?.text).toMatch(/▐ CONDITION GREEN ▌$/)
+    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toMatch(/▝ CONDITION $/)
+    expect((await ui.find({ key: 'lcars:row:2' }))?.text).toMatch(/ GREEN $/)
     await ui.unmount()
   })
 
@@ -204,7 +210,7 @@ describe('with red-alert', () => {
     ship(on, { redAlert: { link: { online: true, checkedAt: NOW, mute: { until: null } }, active: null } })
     await $.session.start(START)
     const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...hint(150) })
-    expect((await ui.find({ key: 'lcars:row:2' }))?.text).toMatch(/▐ GREEN · MUTED ▌$/)
+    expect((await ui.find({ key: 'lcars:row:2' }))?.text).toMatch(/ MUTED $/)
     await ui.unmount()
   })
 
@@ -213,8 +219,8 @@ describe('with red-alert', () => {
     await $.session.start(START)
 
     let ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...hint(150) })
-    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toMatch(/^ +RED ALERT ▌/)
-    expect((await ui.find({ key: 'lcars:row:2' }))?.text).toMatch(/▐ RED ALERT ▌$/)
+    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toMatch(/^ +STANDBY ▘.*▝ CONDITION $/)
+    expect((await ui.find({ key: 'lcars:row:2' }))?.text).toMatch(/ RED ALERT $/)
     const lit = await ui.find({ type: 'Text', text: /RED ALERT $/ })
     expect(lit?.props.backgroundColor).toBe('#FF3333')
     expect(lit?.props.color).toBe('#000000')
@@ -224,9 +230,12 @@ describe('with red-alert', () => {
 
     await clock.advance(500)
     ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...hint(150) })
-    const dark = await ui.find({ type: 'Text', text: /RED ALERT $/ })
-    expect(dark?.props.color).toBe('#FF3333')
-    expect(dark?.props.backgroundColor).not.toBe('#FF3333')
+    // both blocks blink: the condition and Claude's state
+    for (const text of [/RED ALERT $/, /STANDBY $/]) {
+      const dark = await ui.find({ type: 'Text', text })
+      expect(dark?.props.color).toBe('#FF3333')
+      expect(dark?.props.backgroundColor).not.toBe('#FF3333')
+    }
     await ui.unmount()
 
     // the animation is over: the frame stays red, steady, until red-alert clears it
@@ -241,8 +250,8 @@ describe('with red-alert', () => {
     ship(on, { redAlert: { link: RED_ALERT_ONLINE, active: RED_ALERT_KLAXON } })
     await $.session.start(START)
     const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...hint(150) })
-    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toMatch(/^ +STANDBY ▌/)
-    expect((await ui.find({ key: 'lcars:row:2' }))?.text).toMatch(/ ▀▀▀▘$/)
+    expect((await ui.find({ key: 'lcars:row:1' }))?.text).toMatch(/^ +STANDBY ▘.*▝ SHIP TIME $/)
+    expect(await ui.find({ type: 'Text', text: /RED ALERT/ })).toBeUndefined()
     await ui.unmount()
   })
 })
@@ -315,7 +324,7 @@ function view(overrides: Partial<PanelView> = {}): PanelView {
     showUserHost: true,
     alert: null,
     isBlinkDark: false,
-    condition: { label: 'CONDITION GREEN', color: '#66DD99' },
+    condition: { label: 'CONDITION GREEN', short: 'GREEN', color: '#66DD99' },
     ...overrides,
   }
 }
@@ -356,7 +365,7 @@ describe('readouts', () => {
 
 describe('layout', () => {
   test('every row fills the width exactly, at any width', () => {
-    for (const width of [BRIDGE_MIN_WIDTH, 80, 101, 146, 220]) {
+    for (const width of [BRIDGE_MIN_WIDTH, 64, 80, 101, 108, 146, 220]) {
       for (const overrides of [{}, { alert: { title: 'RED ALERT', level: 'red', color: '#FF3333' } }, { readings: null }]) {
         for (const row of bridgeRows(view(overrides), width)) expect(widthOf(row)).toBe(width)
       }
@@ -366,16 +375,27 @@ describe('layout', () => {
     }
   })
 
-  test('drops the gauges before any reading', () => {
-    const middle = bridgeRows(view({ showCost: false }), 76)[1] ?? []
-    const text = middle.map(piece => piece.text).join('')
-    expect(text).toContain('ANTIMATTER 88%')
-    expect(text).not.toContain('▰')
+  const rowsAt = (width: number, overrides: Partial<PanelView> = {}) =>
+    bridgeRows(view(overrides), width).map(row => row.map(piece => piece.text).join(''))
+
+  test('a narrow panel shrinks the meters first, then keeps the most important columns', () => {
+    const [, labels, values] = rowsAt(64)
+    expect(labels).toMatch(/HELM +CORE +DILITHIUM /)
+    expect(labels).not.toContain('ANTIMATTER')
+    expect(labels).not.toContain('COURSE')
+    expect(values).toMatch(/OPUS 5\.5 WARP 9 +▊{3,6} 42% +▊{3,6} 72% /)
+  })
+
+  test('optional columns join only when every column fits at its full width', () => {
+    expect(rowsAt(108)[1]).not.toMatch(/ENV|ENERGY|CREW/)
+    const [, labels, values] = rowsAt(220)
+    expect(labels).toMatch(/COURSE feature\/saucer-separation +ENV +ENERGY +CREW /)
+    expect(values).toMatch(/~\/星舰\/enterprise-d +warpcore +\$1\.25 +picard@enterprise /)
   })
 
   test('plain labels', () => {
-    const [, middle, bottom] = bridgeRows(view({ labels: 'plain' }), 200).map(row => row.map(piece => piece.text).join(''))
-    expect(middle).toContain('IDLE ▌ MODEL OPUS 5.5 XHIGH   CTX ▰▰▰▰▱▱▱▱▱▱ 42%   5H ▰▰▰▰▱▱ 72% T-2H   7D 88% T-3D4H   COST $1.25')
-    expect(bottom).toContain('DIR ~/星舰/enterprise-d ▀▀ GIT feature/saucer-separation ▀▀ ENV warpcore')
+    const [, labels, values] = rowsAt(200, { labels: 'plain' })
+    expect(labels).toMatch(/^ +IDLE ▘ MODEL +CTX +5H T-2H +7D +GIT feature\/saucer-separation +ENV +COST +USER /)
+    expect(values).toContain('OPUS 5.5 XHIGH')
   })
 })
