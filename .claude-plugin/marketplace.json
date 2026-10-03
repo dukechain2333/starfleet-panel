@@ -1,0 +1,17 @@
+{
+  "name": "starfleet-panel",
+  "owner": { "name": "dukechain2333" },
+  "metadata": {
+    "description": "An LCARS status panel for Claude Code, in the style of a 24th-century Starfleet console."
+  },
+  "plugins": [
+    {
+      "name": "starfleet-panel",
+      "source": "./plugin",
+      "description": "Model, effort, context window, rate limits, directory and git branch as an LCARS frame under the prompt; follows red-alert's alert condition.",
+      "version": "0.1.0",
+      "license": "MIT",
+      "homepage": "https://github.com/dukechain2333/starfleet-panel"
+    }
+  ]
+}

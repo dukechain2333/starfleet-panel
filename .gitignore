@@ -1,0 +1,7 @@
+# written by the engine beside a loaded mod, for the editor; regenerated per build
+plugin/.claude-plugin/types/
+plugin/.claude/
+node_modules/
+__pycache__/
+*.pyc
+*.ans

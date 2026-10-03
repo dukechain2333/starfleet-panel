@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Shell syntax
+        run: bash -n install.sh && bash -n uninstall.sh
+      - name: JSON manifests parse
+        run: |
+          for f in .claude-plugin/marketplace.json plugin/.claude-plugin/plugin.json plugin/hooks/hooks.json; do
+            python3 -m json.tool "$f" > /dev/null && echo "ok $f"
+          done
+      - name: Preview renderer runs
+        run: python3 -m py_compile docs/ansi2svg.py

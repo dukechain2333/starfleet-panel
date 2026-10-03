@@ -1,0 +1,51 @@
+{
+  "name": "starfleet-panel",
+  "version": "0.1.0",
+  "description": "An LCARS status panel under the Claude Code prompt, in the style of a 24th-century Starfleet console; follows red-alert's alert condition.",
+  "author": { "name": "dukechain2333" },
+  "homepage": "https://github.com/dukechain2333/starfleet-panel",
+  "repository": "https://github.com/dukechain2333/starfleet-panel",
+  "license": "MIT",
+  "keywords": ["statusline", "status", "lcars", "star-trek", "mod"],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "layout": {
+      "type": "string",
+      "title": "Panel layout",
+      "description": "bridge: a three-row LCARS frame; compact: one row; off: only Claude Code's own hint line.",
+      "default": "bridge",
+      "options": ["bridge", "compact", "off"]
+    },
+    "labels": {
+      "type": "string",
+      "title": "Readout labels",
+      "description": "starfleet: HELM, CORE, DILITHIUM, ANTIMATTER, SECTOR, COURSE; plain: MODEL, CTX, 5H, 7D, DIR, GIT.",
+      "default": "starfleet",
+      "options": ["starfleet", "plain"]
+    },
+    "showCost": {
+      "type": "boolean",
+      "title": "Show session cost",
+      "description": "Add the session's cost (ENERGY) to the readouts.",
+      "default": false
+    },
+    "showUserHost": {
+      "type": "boolean",
+      "title": "Show user@host",
+      "description": "Add user@host to the bottom bar.",
+      "default": true
+    },
+    "followRedAlert": {
+      "type": "boolean",
+      "title": "Follow red-alert",
+      "description": "Show red-alert's alert condition, and repaint the panel in the alert's color while red-alert shows an alert.",
+      "default": true
+    },
+    "refreshSeconds": {
+      "type": "number",
+      "title": "Refresh interval (seconds)",
+      "description": "How often the panel re-reads the context window and rate limits.",
+      "default": 2
+    }
+  }
+}
